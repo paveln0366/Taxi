@@ -11,4 +11,5 @@
     <string name="tap_to_log_in">Tap to log in</string>
     <string name="passenger_sign_up">Passenger sign up</string>
     <string name="driver_sign_up">Driver sign up</string>
+    <string name="title_activity_driver_maps">Map</string>
 </resources>
