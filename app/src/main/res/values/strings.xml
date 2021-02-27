@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">Taxi</string>
+    <string name="taxi_splash_screen">Taxi splash screen</string>
 </resources>
