@@ -12,4 +12,5 @@
     <string name="passenger_sign_up">Passenger sign up</string>
     <string name="driver_sign_up">Driver sign up</string>
     <string name="title_activity_driver_maps">Map</string>
+    <string name="title_activity_passenger_maps">Map</string>
 </resources>

@@ -5,7 +5,7 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_height="match_parent"
     android:layout_width="match_parent"
-    tools:context=".DriverMapsActivity">
+    tools:context=".PassengerMapsActivity">
 
     <fragment
         android:id="@+id/map"
@@ -15,9 +15,15 @@
         map:layout_constraintEnd_toEndOf="parent"
         map:layout_constraintStart_toStartOf="parent"
         map:layout_constraintTop_toTopOf="parent"
-        map:layout_constraintBottom_toTopOf="@id/ll_buttons"
+        map:layout_constraintBottom_toTopOf="@id/btn_taxi"
         android:layout_height="0dp" />
-
+    <Button
+        android:id="@+id/btn_taxi"
+        android:text="Taxi"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_margin="@dimen/standard_margin"
+        map:layout_constraintBottom_toTopOf="@id/ll_buttons"/>
     <LinearLayout
         android:id="@+id/ll_buttons"
         android:orientation="horizontal"

@@ -1,5 +1,10 @@
 package com.pavelpotapov.taxi;
 
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.core.app.ActivityCompat;
+import androidx.fragment.app.FragmentActivity;
+
 import android.Manifest;
 import android.app.Activity;
 import android.content.Intent;
@@ -7,18 +12,18 @@ import android.content.IntentSender;
 import android.content.pm.PackageManager;
 import android.location.Location;
 import android.net.Uri;
+import android.os.Bundle;
 import android.os.Looper;
 import android.provider.Settings;
-import androidx.fragment.app.FragmentActivity;
-import android.os.Bundle;
 import android.util.Log;
 import android.view.View;
 import android.widget.Button;
-import android.widget.TextView;
 import android.widget.Toast;
 
 import com.firebase.geofire.GeoFire;
 import com.firebase.geofire.GeoLocation;
+import com.firebase.geofire.GeoQuery;
+import com.firebase.geofire.GeoQueryEventListener;
 import com.google.android.gms.common.api.ApiException;
 import com.google.android.gms.common.api.ResolvableApiException;
 import com.google.android.gms.location.FusedLocationProviderClient;
@@ -35,6 +40,7 @@ import com.google.android.gms.maps.GoogleMap;
 import com.google.android.gms.maps.OnMapReadyCallback;
 import com.google.android.gms.maps.SupportMapFragment;
 import com.google.android.gms.maps.model.LatLng;
+import com.google.android.gms.maps.model.Marker;
 import com.google.android.gms.maps.model.MarkerOptions;
 import com.google.android.gms.tasks.OnCompleteListener;
 import com.google.android.gms.tasks.OnFailureListener;
@@ -43,21 +49,20 @@ import com.google.android.gms.tasks.Task;
 import com.google.android.material.snackbar.Snackbar;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseUser;
+import com.google.firebase.database.DataSnapshot;
+import com.google.firebase.database.DatabaseError;
 import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
+import com.google.firebase.database.ValueEventListener;
 
-import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
-import androidx.core.app.ActivityCompat;
+import java.util.List;
 
-public class DriverMapsActivity extends FragmentActivity implements OnMapReadyCallback {
+public class PassengerMapsActivity extends FragmentActivity implements OnMapReadyCallback {
 
     private GoogleMap mMap;
 
     private static final int CHECK_SETTINGS_CODE = 111;
     private static final int REQUEST_LOCATION_PERMISSION = 222 ;
-
-
 
     private FusedLocationProviderClient fusedLocationClient;
     private SettingsClient settingsClient;
@@ -68,30 +73,45 @@ public class DriverMapsActivity extends FragmentActivity implements OnMapReadyCa
 
     private boolean isLocationUpdatesActive;
 
-    Button settingsButton, signOutButton;
+    private Button settingsButton, signOutButton, btnTaxi;
 
-    FirebaseAuth auth;
-    FirebaseUser currentUser;
+    private FirebaseAuth auth;
+    private FirebaseUser currentUser;
+    private DatabaseReference driversGeoFire;
+    private DatabaseReference driverLocation;
+    private int searchRadius = 1;
+    private boolean isDriverFound = false;
+    private String driverId;
+    private Marker driverMarker;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setContentView(R.layout.activity_driver_maps);
+        setContentView(R.layout.activity_passenger_maps);
 
         auth = FirebaseAuth.getInstance();
         currentUser = auth.getCurrentUser();
 
         settingsButton = findViewById(R.id.btn_settings);
         signOutButton = findViewById(R.id.btn_sign_out);
+        btnTaxi = findViewById(R.id.btn_taxi);
+        driversGeoFire = FirebaseDatabase.getInstance().getReference().child("driversGeoFire");
 
         signOutButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 auth.signOut();
-                signOutDriver();
+                signOutPassenger();
             }
         });
 
+        btnTaxi.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                btnTaxi.setText("...");
+                getTaxi();
+            }
+        });
 
         // Obtain the SupportMapFragment and get notified when the map is ready to be used.
         SupportMapFragment mapFragment = (SupportMapFragment) getSupportFragmentManager()
@@ -110,17 +130,94 @@ public class DriverMapsActivity extends FragmentActivity implements OnMapReadyCa
 
     }
 
-    private void signOutDriver() {
+    private void getTaxi() {
 
-        String driverUserId = currentUser.getUid();
-        DatabaseReference drivers = FirebaseDatabase.getInstance()
+        GeoFire geoFire = new GeoFire(driversGeoFire);
+        GeoQuery geoQuery = geoFire.queryAtLocation(new GeoLocation(currentLocation.getLatitude(),
+                currentLocation.getLongitude()), searchRadius);
+        geoQuery.removeAllListeners();
+        geoQuery.addGeoQueryEventListener(new GeoQueryEventListener() {
+            @Override
+            public void onKeyEntered(String key, GeoLocation location) {
+                if (!isDriverFound) {
+                    isDriverFound = true;
+                    driverId = key;
+                    getDriverLocation();
+                }
+            }
+
+            @Override
+            public void onKeyExited(String key) {
+
+            }
+
+            @Override
+            public void onKeyMoved(String key, GeoLocation location) {
+
+            }
+
+            @Override
+            public void onGeoQueryReady() {
+                if (!isDriverFound) {
+                    searchRadius++;
+                    getTaxi();
+                }
+            }
+
+            @Override
+            public void onGeoQueryError(DatabaseError error) {
+
+            }
+        });
+    }
+
+    private void getDriverLocation() {
+        btnTaxi.setText("Get driver location");
+        driverLocation = FirebaseDatabase.getInstance().getReference().child("driversGeoFire").child(driverId).child("l");
+        driverLocation.addValueEventListener(new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull DataSnapshot snapshot) {
+                if (snapshot.exists()) {
+                    List<Object> driverLocationParameters = (List<Object>) snapshot.getValue();
+                    double latitude = 0;
+                    double longitude = 0;
+                    if (driverLocationParameters.get(0) != null) {
+                        latitude = Double.parseDouble(driverLocationParameters.get(0).toString());
+                    }
+                    if (driverLocationParameters.get(1) != null) {
+                        longitude = Double.parseDouble(driverLocationParameters.get(1).toString());
+                    }
+                    LatLng driverLatLng = new LatLng(latitude, longitude);
+                    if (driverMarker != null) {
+                        driverMarker.remove();
+                    }
+                    Location driverLocation = new Location("");
+                    driverLocation.setLatitude(latitude);
+                    driverLocation.setLongitude(longitude);
+                    float distanceToDriver = driverLocation.distanceTo(currentLocation);
+                    btnTaxi.setText("Distance to driver: " + distanceToDriver);
+                    driverMarker = mMap.addMarker(new MarkerOptions().position(driverLatLng).title("Driver"));
+                }
+            }
+
+            @Override
+            public void onCancelled(@NonNull DatabaseError error) {
+
+            }
+        });
+    }
+
+    private void signOutPassenger() {
+
+        String passengerUserId = currentUser.getUid();
+        DatabaseReference passengers = FirebaseDatabase.getInstance()
                 .getReference()
-                .child("drivers");
+                .child("passengers");
 
-        GeoFire geoFire = new GeoFire(drivers);
-        geoFire.removeLocation(driverUserId);
+        GeoFire geoFire = new GeoFire(passengers);
+        geoFire.removeLocation(passengerUserId);
 
-        Intent intent = new Intent(DriverMapsActivity.this,
+        Intent intent = new Intent(PassengerMapsActivity.this,
                 ChooseModeActivity.class);
         intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK |
                 Intent.FLAG_ACTIVITY_CLEAR_TASK);
@@ -146,10 +243,10 @@ public class DriverMapsActivity extends FragmentActivity implements OnMapReadyCa
         if (currentLocation != null) {
 
             // Add a marker in Sydney and move the camera
-            LatLng driverLocation = new LatLng(currentLocation.getLatitude(),
+            LatLng passengerLocation = new LatLng(currentLocation.getLatitude(),
                     currentLocation.getLongitude());
-            mMap.addMarker(new MarkerOptions().position(driverLocation).title("Driver location"));
-            mMap.moveCamera(CameraUpdateFactory.newLatLng(driverLocation));
+            mMap.addMarker(new MarkerOptions().position(passengerLocation).title("Passenger location"));
+            mMap.moveCamera(CameraUpdateFactory.newLatLng(passengerLocation));
         }
     }
 
@@ -183,12 +280,12 @@ public class DriverMapsActivity extends FragmentActivity implements OnMapReadyCa
                                     LocationSettingsResponse locationSettingsResponse) {
 
                                 if (ActivityCompat.checkSelfPermission(
-                                        DriverMapsActivity.this,
+                                        PassengerMapsActivity.this,
                                         Manifest.permission.ACCESS_FINE_LOCATION) !=
                                         PackageManager.PERMISSION_GRANTED &&
                                         ActivityCompat
                                                 .checkSelfPermission(
-                                                        DriverMapsActivity.this,
+                                                        PassengerMapsActivity.this,
                                                         Manifest.permission
                                                                 .ACCESS_COARSE_LOCATION) !=
                                                 PackageManager.PERMISSION_GRANTED) {
@@ -226,7 +323,7 @@ public class DriverMapsActivity extends FragmentActivity implements OnMapReadyCa
                                     ResolvableApiException resolvableApiException =
                                             (ResolvableApiException) e;
                                     resolvableApiException.startResolutionForResult(
-                                            DriverMapsActivity.this,
+                                            PassengerMapsActivity.this,
                                             CHECK_SETTINGS_CODE
                                     );
                                 } catch (IntentSender.SendIntentException sie) {
@@ -238,7 +335,7 @@ public class DriverMapsActivity extends FragmentActivity implements OnMapReadyCa
                                     .SETTINGS_CHANGE_UNAVAILABLE:
                                 String message =
                                         "Adjust location settings on your device";
-                                Toast.makeText(DriverMapsActivity.this, message,
+                                Toast.makeText(PassengerMapsActivity.this, message,
                                         Toast.LENGTH_LONG).show();
 
                                 isLocationUpdatesActive = false;
@@ -315,17 +412,17 @@ public class DriverMapsActivity extends FragmentActivity implements OnMapReadyCa
                     currentLocation.getLongitude());
             mMap.moveCamera(CameraUpdateFactory.newLatLng(driverLocation));
             mMap.animateCamera(CameraUpdateFactory.zoomTo(12));
-            mMap.addMarker(new MarkerOptions().position(driverLocation).title("Driver location"));
+            mMap.addMarker(new MarkerOptions().position(driverLocation).title("Passenger location"));
 
-            String driverUserId = currentUser.getUid();
-            DatabaseReference driversGeoFire = FirebaseDatabase.getInstance().getReference()
-                    .child("driversGeoFire");
-            DatabaseReference drivers = FirebaseDatabase.getInstance().getReference()
-                    .child("drivers");
-            drivers.setValue(true);
+            String passengersUserId = currentUser.getUid();
+            DatabaseReference passengersGeoFire = FirebaseDatabase.getInstance().getReference()
+                    .child("passengersGeoFire");
+            DatabaseReference passengers = FirebaseDatabase.getInstance().getReference()
+                    .child("passengers");
+            passengers.setValue(true);
 
-            GeoFire geoFire = new GeoFire(driversGeoFire);
-            geoFire.setLocation(driverUserId, new GeoLocation(currentLocation.getLatitude(),
+            GeoFire geoFire = new GeoFire(passengersGeoFire);
+            geoFire.setLocation(passengersUserId, new GeoLocation(currentLocation.getLatitude(),
                     currentLocation.getLongitude()));
         }
 
@@ -376,7 +473,7 @@ public class DriverMapsActivity extends FragmentActivity implements OnMapReadyCa
                         @Override
                         public void onClick(View v) {
                             ActivityCompat.requestPermissions(
-                                    DriverMapsActivity.this,
+                                    PassengerMapsActivity.this,
                                     new String[]{
                                             Manifest.permission.ACCESS_FINE_LOCATION
                                     },
@@ -390,7 +487,7 @@ public class DriverMapsActivity extends FragmentActivity implements OnMapReadyCa
         } else {
 
             ActivityCompat.requestPermissions(
-                    DriverMapsActivity.this,
+                    PassengerMapsActivity.this,
                     new String[]{
                             Manifest.permission.ACCESS_FINE_LOCATION
                     },
